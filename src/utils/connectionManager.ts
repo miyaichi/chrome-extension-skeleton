@@ -19,7 +19,6 @@ export class ConnectionManager {
   ) {
     this.logger = logger ?? new Logger(context);
     this.messageHandler = onMessage ?? null;
-    // バインドされたリスナーを保持
     this.disconnectListener = this.createDisconnectListener();
   }
 
@@ -27,7 +26,7 @@ export class ConnectionManager {
     return (port: chrome.runtime.Port) => {
       const error = chrome.runtime.lastError;
 
-      // 接続直後の不要な切断イベントを無視
+      // Ignore early disconnect events
       if (this.status === 'connected' && Date.now() - this.lastConnectTime < 1000) {
         this.logger.debug('Ignoring early disconnect event');
         return;
@@ -40,12 +39,12 @@ export class ConnectionManager {
   private setupConnectionHandlers(): void {
     if (!this.port) return;
 
-    // 既存のリスナーを削除（存在する場合）
+    // Disconnect event listener if it exists
     if (this.disconnectListener) {
       this.port.onDisconnect.removeListener(this.disconnectListener);
     }
 
-    // 新しいリスナーを設定
+    // Add disconnect listener
     this.disconnectListener = this.createDisconnectListener();
     this.port.onDisconnect.addListener(this.disconnectListener);
 
@@ -57,7 +56,7 @@ export class ConnectionManager {
 
   connect(): chrome.runtime.Port {
     try {
-      // 既に接続済みの場合は何もしない
+      // Ignore if already connected
       if (this.status === 'connected' && this.port) {
         return this.port;
       }
@@ -165,7 +164,7 @@ export class ConnectionManager {
         return;
       }
 
-      const baseDelay = 1000; // 遅延を1秒に増やす
+      const baseDelay = 1000;
       const maxDelay = 5000;
       const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), maxDelay);
 
@@ -177,7 +176,7 @@ export class ConnectionManager {
 
       await new Promise((resolve) => setTimeout(resolve, delay));
 
-      // 再接続を試みる前に状態をチェック
+      // Check if the connection was re-established by another reconnection attempt
       if (this.status === 'connected' || !this.isReconnecting) {
         return;
       }
