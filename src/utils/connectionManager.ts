@@ -1,4 +1,5 @@
-import { BaseMessage, ConnectionStatus, Context, MessageHandler } from '../types/types';
+import { BaseMessage, MessageHandler } from '../types/messages';
+import { ConnectionStatus, Context } from '../types/types';
 import { Logger } from './logger';
 
 export class ConnectionManager {

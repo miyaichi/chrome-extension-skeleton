@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { TabInfo } from '../types/messages';
-import { BaseMessage } from '../types/types';
+import { BaseMessage, TabInfo } from '../types/messages';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
 

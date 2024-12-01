@@ -1,4 +1,4 @@
-import { MessageHandler } from '../types/types';
+import { MessageHandler } from '../types/messages';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
 

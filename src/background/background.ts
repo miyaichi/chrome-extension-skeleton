@@ -1,5 +1,5 @@
-import { TabInfo } from '../types/messages';
-import { Context, MessageHandler } from '../types/types';
+import { MessageHandler, TabInfo } from '../types/messages';
+import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
 
