@@ -1,4 +1,3 @@
-// types.ts
 export type Context = 'background' | 'sidepanel' | `content-${number}`;
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
