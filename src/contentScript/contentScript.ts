@@ -1,4 +1,3 @@
-// src/contentScript/contentScript.ts
 import { MessageHandler } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';

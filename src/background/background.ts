@@ -1,4 +1,3 @@
-// src/background/background.ts
 import { TabInfo } from '../types/messages';
 import { Context, MessageHandler } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
@@ -38,6 +37,13 @@ class BackgroundService {
       if (!tab.url) return;
 
       this.activeTabInfo = { tabId: activeInfo.tabId, windowId: activeInfo.windowId, url: tab.url };
+    });
+
+    // Monitor tab URL change
+    chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+      if (changeInfo.status === 'complete') {
+        this.activeTabInfo = { tabId, windowId: tab.windowId, url: tab.url || '' };
+      }
     });
 
     // Monitor window focus

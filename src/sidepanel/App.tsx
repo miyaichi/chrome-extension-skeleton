@@ -51,6 +51,21 @@ export default function App() {
     };
     chrome.tabs.onActivated.addListener(handleTabChange);
 
+    // Monitor tab URL change
+    const handleTabUpdated = async (
+      tabId: number,
+      changeInfo: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab
+    ) => {
+      if (changeInfo.status === 'complete') {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (activeTab.id === tabId) {
+          setactiveTabInfo({ tabId, windowId: tab.windowId, url: tab.url || '' });
+        }
+      }
+    };
+    chrome.tabs.onUpdated.addListener(handleTabUpdated);
+
     // Monitor window focus change
     const handleWindowFocus = async (windowId: number) => {
       if (windowId === chrome.windows.WINDOW_ID_NONE) return;
@@ -64,6 +79,7 @@ export default function App() {
 
     return () => {
       chrome.tabs.onActivated.removeListener(handleTabChange);
+      chrome.tabs.onUpdated.removeListener(handleTabUpdated);
       chrome.windows.onFocusChanged.removeListener(handleWindowFocus);
       connectionManager?.disconnect();
     };
