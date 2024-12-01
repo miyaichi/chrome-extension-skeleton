@@ -1,5 +1,4 @@
-// src/types/messages.ts
-import { BaseMessage, Context } from './types';
+import { BaseMessage } from './types';
 
 export interface TabInfo {
   tabId: number;
@@ -7,7 +6,7 @@ export interface TabInfo {
   url: string;
 }
 
-// メッセージペイロードの型定義
+// Type definition of message payload
 export interface MessagePayloads {
   GET_TAB_ID: undefined;
   GET_TAB_ID_RESPONSE: { tabId: number };
@@ -15,13 +14,13 @@ export interface MessagePayloads {
   WINDOW_FOCUSED: { windowId: number };
 }
 
-// 型安全なメッセージ型の定義
+// Type-safe message type definition
 export type Message<T extends keyof MessagePayloads> = BaseMessage & {
   type: T;
   payload: MessagePayloads[T];
 };
 
-// 全メッセージの共用型
+// Union of all message types
 export type ExtensionMessage = {
   [K in keyof MessagePayloads]: Message<K>;
 }[keyof MessagePayloads];

@@ -76,6 +76,8 @@ npm run watch
 │   ├── sidepanel.html
 │   └── icons/
 ├── src/
+│   ├── assets/
+|   |  └── icons/
 │   ├── background/
 │   │   └── background.ts
 │   ├── contentScript/

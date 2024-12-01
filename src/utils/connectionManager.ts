@@ -166,20 +166,20 @@ export class ConnectionManager {
   private setupConnectionHandlers(): void {
     if (!this.port) return;
 
-    // Disconnectのハンドリング
+    // Disconect handler
     this.port.onDisconnect.addListener(() => {
       const error = chrome.runtime.lastError;
       this.handleDisconnection(error);
     });
 
-    // メッセージ受信のハンドリング
+    // Message handler
     this.port.onMessage.addListener((message: BaseMessage) => {
       this.handleMessage(message);
     });
   }
 
   private handleMessage(message: BaseMessage): void {
-    // メッセージの宛先チェック
+    // Check message target
     if (message.target !== this.context) {
       return;
     }
@@ -189,7 +189,7 @@ export class ConnectionManager {
       type: message.type,
     });
 
-    // 登録されたハンドラでメッセージを処理
+    // Process the message with the registered handler
     if (this.messageHandler) {
       try {
         this.messageHandler(message);

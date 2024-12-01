@@ -34,13 +34,9 @@ module.exports = {
   plugins: [
     new CopyPlugin({
       patterns: [
-        {
-          from: 'public',
-          to: '.',
-          globOptions: {
-            ignore: ['**/sidepanel.html'], // sidepanel.htmlをコピーから除外
-          },
-        },
+        { from: 'public', to: '.', globOptions: { ignore: ['**/sidepanel.html'], }, },
+        { from: 'manifest.json', to: '.' },
+        { from: 'src/assets/icons/build', to: 'icons' },
       ],
     }),
     new HtmlWebpackPlugin({

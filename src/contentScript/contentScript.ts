@@ -13,7 +13,7 @@ class ContentScript {
   }
 
   private async initialize() {
-    // 一時的な接続を作成してTabIDを取得
+    // Temporarily create a connection to get the TabID
     const tempManager = new ConnectionManager('content-0', this.handleMessage);
     tempManager.connect();
 
@@ -35,7 +35,7 @@ class ContentScript {
   private async setupPermanentConnection(tabId: number) {
     if (this.connectionManager) return;
 
-    // 正しいTabIDで永続的な接続を作成
+    // Create a permanent connection with the correct TabID
     this.connectionManager = new ConnectionManager(
       `content-${tabId}`,
       this.handlePermanentMessages
@@ -45,10 +45,10 @@ class ContentScript {
   }
 
   private handlePermanentMessages: MessageHandler = (message) => {
-    // 他のメッセージハンドリングをここに実装
+    // Implement other message handling here ...
     this.logger.debug('Message received', { type: message.type });
   };
 }
 
-// Content Scriptの初期化
+// Initialize the Content Script
 new ContentScript();

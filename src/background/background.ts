@@ -35,7 +35,7 @@ class BackgroundService {
   }
 
   private setupChromeListeners() {
-    // タブのアクティブ化を監視
+    // Monitor tab activation
     chrome.tabs.onActivated.addListener(async (activeInfo) => {
       const tab = await chrome.tabs.get(activeInfo.tabId);
       if (!tab.url) return;
@@ -49,7 +49,7 @@ class BackgroundService {
       await this.notifySidePanel();
     });
 
-    // ウィンドウのフォーカスを監視
+    // Monitor window focus
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
       if (windowId === chrome.windows.WINDOW_ID_NONE) return;
 
@@ -76,5 +76,5 @@ class BackgroundService {
   }
 }
 
-// Background serviceの初期化
+// Initialize the background service
 new BackgroundService();
