@@ -7,35 +7,16 @@ class ContentScript {
   private connectionManager: ConnectionManager | null = null;
   private logger: Logger;
 
-  constructor() {
+  constructor(sender: chrome.runtime.MessageSender) {
     this.logger = new Logger('content-script');
-    this.initialize();
+    this.setupPermanentConnection(sender.tab?.id || 0);
   }
-
-  private async initialize() {
-    // Temporarily create a connection to get the TabID
-    const tempManager = new ConnectionManager('content-0', this.handleMessage);
-    tempManager.connect();
-
-    await tempManager.sendMessage('background', {
-      type: 'GET_TAB_ID',
-      payload: undefined,
-    });
-  }
-
-  private handleMessage: MessageHandler = async (message) => {
-    switch (message.type) {
-      case 'GET_TAB_ID_RESPONSE':
-        const payload = message.payload as { tabId: number };
-        await this.setupPermanentConnection(payload.tabId);
-        break;
-    }
-  };
 
   private async setupPermanentConnection(tabId: number) {
     if (this.connectionManager) return;
 
     // Create a permanent connection with the correct TabID
+    this.logger.debug('Setting up permanent connection', { tabId });
     this.connectionManager = new ConnectionManager(
       `content-${tabId}`,
       this.handlePermanentMessages
@@ -50,5 +31,25 @@ class ContentScript {
   };
 }
 
-// Initialize the Content Script
-new ContentScript();
+// ContentScript initialization
+const contentScriptInstances = new WeakMap<Window, ContentScript>();
+
+// Ensure content script is initialized immediately
+if (!contentScriptInstances.has(window)) {
+  const logger = new Logger('content-script');
+
+  logger.log('Initializing content script...');
+  // Get the tab ID from the background
+  chrome.runtime.sendMessage({ type: 'GET_TAB_ID' }, (response) => {
+    if (chrome.runtime.lastError) {
+      logger.error('Failed to get tab ID:', chrome.runtime.lastError);
+      return;
+    }
+
+    const sender = {
+      tab: { id: response.tabId },
+    } as chrome.runtime.MessageSender;
+
+    contentScriptInstances.set(window, new ContentScript(sender));
+  });
+}

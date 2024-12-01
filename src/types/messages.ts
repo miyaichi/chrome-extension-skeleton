@@ -10,8 +10,6 @@ export interface TabInfo {
 export interface MessagePayloads {
   GET_TAB_ID: undefined;
   GET_TAB_ID_RESPONSE: { tabId: number };
-  TAB_ACTIVATED: TabInfo;
-  WINDOW_FOCUSED: { windowId: number };
 }
 
 // Type-safe message type definition

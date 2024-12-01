@@ -12,11 +12,55 @@ class BackgroundService {
   constructor() {
     this.logger = new Logger('background');
     this.connectionManager = new ConnectionManager('background', this.handleMessage);
-    this.connectionManager.connect();
+    this.setupConnection();
     this.setupChromeListeners();
   }
 
+  private async setupConnection() {
+    try {
+      this.connectionManager.connect();
+
+      setInterval(() => {
+        if (this.connectionManager.getStatus() !== 'connected') {
+          this.logger.debug('Reconnecting background service...');
+          this.connectionManager.connect();
+        }
+      }, 5000);
+    } catch (error) {
+      this.logger.error('Failed to setup connection:', error);
+    }
+  }
+
+  private setupChromeListeners() {
+    // Monitor tab activation
+    chrome.tabs.onActivated.addListener(async (activeInfo) => {
+      const tab = await chrome.tabs.get(activeInfo.tabId);
+      if (!tab.url) return;
+
+      this.activeTabInfo = { tabId: activeInfo.tabId, windowId: activeInfo.windowId, url: tab.url };
+    });
+
+    // Monitor window focus
+    chrome.windows.onFocusChanged.addListener(async (windowId) => {
+      if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+
+      const [tab] = await chrome.tabs.query({ active: true, windowId });
+      if (!tab?.url) return;
+
+      this.activeTabInfo = { tabId: tab.id!, windowId, url: tab.url };
+    });
+
+    // Get sender tab ID for content scripts
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type === 'GET_TAB_ID' && sender.tab?.id) {
+        sendResponse({ tabId: sender.tab.id });
+      }
+    });
+  }
+
   private handleMessage: MessageHandler = (message) => {
+    // Implement other message handling here ..
+    this.logger.debug('Message received', { type: message.type });
     switch (message.type) {
       case 'GET_TAB_ID':
         this.handleGetTabId(message.source);
@@ -31,47 +75,6 @@ class BackgroundService {
     await this.connectionManager.sendMessage(source, {
       type: 'GET_TAB_ID_RESPONSE',
       payload: { tabId },
-    });
-  }
-
-  private setupChromeListeners() {
-    // Monitor tab activation
-    chrome.tabs.onActivated.addListener(async (activeInfo) => {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      if (!tab.url) return;
-
-      this.activeTabInfo = {
-        tabId: activeInfo.tabId,
-        windowId: activeInfo.windowId,
-        url: tab.url,
-      };
-
-      await this.notifySidePanel();
-    });
-
-    // Monitor window focus
-    chrome.windows.onFocusChanged.addListener(async (windowId) => {
-      if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-
-      const [tab] = await chrome.tabs.query({ active: true, windowId });
-      if (!tab?.url) return;
-
-      this.activeTabInfo = {
-        tabId: tab.id!,
-        windowId,
-        url: tab.url,
-      };
-
-      await this.notifySidePanel();
-    });
-  }
-
-  private async notifySidePanel() {
-    if (!this.activeTabInfo) return;
-
-    await this.connectionManager.sendMessage('sidepanel', {
-      type: 'TAB_ACTIVATED',
-      payload: this.activeTabInfo,
     });
   }
 }

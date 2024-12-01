@@ -1,4 +1,3 @@
-// connectionManager.ts
 import { BaseMessage, ConnectionStatus, Context, MessageHandler } from '../types/types';
 import { Logger } from './logger';
 
@@ -9,6 +8,9 @@ export class ConnectionManager {
   private reconnectAttempts = 0;
   private readonly logger: Logger;
   private readonly messageHandler: MessageHandler | null = null;
+  private isReconnecting = false;
+  private lastConnectTime: number = 0;
+  private disconnectListener: ((port: chrome.runtime.Port) => void) | null = null;
 
   constructor(
     private readonly context: Context,
@@ -17,28 +19,59 @@ export class ConnectionManager {
   ) {
     this.logger = logger ?? new Logger(context);
     this.messageHandler = onMessage ?? null;
+    // バインドされたリスナーを保持
+    this.disconnectListener = this.createDisconnectListener();
   }
 
-  /**
-   * Get the current connection status
-   */
-  getStatus(): ConnectionStatus {
-    return this.status;
+  private createDisconnectListener(): (port: chrome.runtime.Port) => void {
+    return (port: chrome.runtime.Port) => {
+      const error = chrome.runtime.lastError;
+
+      // 接続直後の不要な切断イベントを無視
+      if (this.status === 'connected' && Date.now() - this.lastConnectTime < 1000) {
+        this.logger.debug('Ignoring early disconnect event');
+        return;
+      }
+
+      this.handleDisconnection(error);
+    };
   }
 
-  /**
-   * Connect to the extension
-   */
+  private setupConnectionHandlers(): void {
+    if (!this.port) return;
+
+    // 既存のリスナーを削除（存在する場合）
+    if (this.disconnectListener) {
+      this.port.onDisconnect.removeListener(this.disconnectListener);
+    }
+
+    // 新しいリスナーを設定
+    this.disconnectListener = this.createDisconnectListener();
+    this.port.onDisconnect.addListener(this.disconnectListener);
+
+    // Message handler
+    this.port.onMessage.addListener((message: BaseMessage) => {
+      this.handleMessage(message);
+    });
+  }
+
   connect(): chrome.runtime.Port {
     try {
+      // 既に接続済みの場合は何もしない
+      if (this.status === 'connected' && this.port) {
+        return this.port;
+      }
+
       this.status = 'connecting';
       this.disconnectExisting();
 
       this.port = chrome.runtime.connect({ name: this.context });
+      this.lastConnectTime = Date.now();
       this.setupConnectionHandlers();
 
       this.status = 'connected';
       this.reconnectAttempts = 0;
+      this.isReconnecting = false;
       this.logger.debug('Connected successfully');
 
       return this.port;
@@ -48,15 +81,49 @@ export class ConnectionManager {
     }
   }
 
-  /**
-   * Send a message to the target
-   */
+  private handleDisconnection(error: chrome.runtime.LastError | undefined): void {
+    this.logger.debug('Disconnect event received', {
+      status: this.status,
+      isReconnecting: this.isReconnecting,
+      timeSinceConnect: Date.now() - this.lastConnectTime,
+      error: error?.message,
+    });
+
+    if (this.isReconnecting) {
+      return;
+    }
+
+    const wasConnected = this.status === 'connected';
+    this.status = 'disconnected';
+    this.port = null;
+
+    if (this.isExtensionContextInvalidated(error)) {
+      this.logger.warn('Extension context invalidated');
+      return;
+    }
+
+    if (
+      wasConnected &&
+      this.shouldAttemptReconnection() &&
+      Date.now() - this.lastConnectTime >= 1000
+    ) {
+      this.isReconnecting = true;
+      this.reconnectWithBackoff().finally(() => {
+        this.isReconnecting = false;
+      });
+    }
+  }
+
+  getStatus(): ConnectionStatus {
+    return this.status;
+  }
+
   async sendMessage<T extends BaseMessage>(
     target: Context,
     messageData: Omit<T, 'source' | 'target' | 'timestamp'>
   ): Promise<void> {
     if (!this.port || this.status !== 'connected') {
-      throw new Error('No active connection');
+      return;
     }
 
     try {
@@ -75,9 +142,6 @@ export class ConnectionManager {
     }
   }
 
-  /**
-   * Disconnect from the current connection
-   */
   disconnect(): void {
     this.disconnectExisting();
   }
@@ -94,40 +158,30 @@ export class ConnectionManager {
     }
   }
 
-  private handleDisconnection(error: chrome.runtime.LastError | undefined): void {
-    const wasConnected = this.status === 'connected';
-    this.port = null;
-    this.status = 'disconnected';
-
-    if (this.isExtensionContextInvalidated(error)) {
-      this.logger.warn('Extension context invalidated');
-      return;
-    }
-
-    if (wasConnected && this.shouldAttemptReconnection()) {
-      this.reconnectWithBackoff();
-    }
-  }
-
   private async reconnectWithBackoff(): Promise<void> {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.logger.error('Max reconnection attempts reached');
-      return;
-    }
-
-    const baseDelay = 100;
-    const maxDelay = 5000;
-    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), maxDelay);
-
-    this.reconnectAttempts++;
-    this.logger.debug('Attempting reconnection', {
-      attempt: this.reconnectAttempts,
-      delay,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, delay));
-
     try {
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        this.logger.error('Max reconnection attempts reached');
+        return;
+      }
+
+      const baseDelay = 1000; // 遅延を1秒に増やす
+      const maxDelay = 5000;
+      const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), maxDelay);
+
+      this.reconnectAttempts++;
+      this.logger.debug('Attempting reconnection', {
+        attempt: this.reconnectAttempts,
+        delay,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // 再接続を試みる前に状態をチェック
+      if (this.status === 'connected' || !this.isReconnecting) {
+        return;
+      }
+
       this.connect();
     } catch (error) {
       this.handleConnectionError(error);
@@ -148,7 +202,12 @@ export class ConnectionManager {
   }
 
   private shouldAttemptReconnection(): boolean {
-    return this.context !== 'background' && this.reconnectAttempts < this.maxReconnectAttempts;
+    return (
+      this.context !== 'background' &&
+      this.reconnectAttempts < this.maxReconnectAttempts &&
+      this.status === 'disconnected' &&
+      !this.isReconnecting
+    );
   }
 
   private isConnectionError(error: unknown): boolean {
@@ -161,21 +220,6 @@ export class ConnectionManager {
       'message' in (error as any) &&
       (error as any).message.includes('Extension context invalidated')
     );
-  }
-
-  private setupConnectionHandlers(): void {
-    if (!this.port) return;
-
-    // Disconect handler
-    this.port.onDisconnect.addListener(() => {
-      const error = chrome.runtime.lastError;
-      this.handleDisconnection(error);
-    });
-
-    // Message handler
-    this.port.onMessage.addListener((message: BaseMessage) => {
-      this.handleMessage(message);
-    });
   }
 
   private handleMessage(message: BaseMessage): void {
@@ -200,7 +244,6 @@ export class ConnectionManager {
   }
 }
 
-// usage example
 export const createConnectionManager = (context: Context): ConnectionManager => {
   return new ConnectionManager(context);
 };

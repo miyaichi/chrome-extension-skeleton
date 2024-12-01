@@ -2,38 +2,87 @@ import React, { useEffect, useState } from 'react';
 import { TabInfo } from '../types/messages';
 import { BaseMessage } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
+import { Logger } from '../utils/logger';
+
+const logger = new Logger('sidepanel');
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabInfo | null>(null);
+  const [activeTabInfo, setactiveTabInfo] = useState<TabInfo | null>(null);
   const [connectionManager, setConnectionManager] = useState<ConnectionManager | null>(null);
+  const initialized = React.useRef(false);
 
   useEffect(() => {
-    const manager = new ConnectionManager('sidepanel', handleMessage);
-    manager.connect();
-    setConnectionManager(manager);
+    if (initialized.current) {
+      logger.debug('App already initialized, skipping...');
+      return;
+    }
+
+    const initializeTab = async () => {
+      if (initialized.current) {
+        return;
+      }
+
+      try {
+        const manager = new ConnectionManager('sidepanel', handleMessage);
+        manager.connect();
+        setConnectionManager(manager);
+
+        // Initialize active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          setactiveTabInfo({ tabId: tab.id, windowId: tab.windowId, url: tab.url || '' });
+          initialized.current = true;
+        }
+
+        logger.debug('Initalized', { tab });
+      } catch (error) {
+        logger.error('Tab initialization failed:', error);
+      }
+    };
+
+    initializeTab();
+
+    // Monitor active tab change
+    const handleTabChange = async (activeInfo: chrome.tabs.TabActiveInfo) => {
+      const tab = await chrome.tabs.get(activeInfo.tabId);
+      if (!tab.url) return;
+
+      setactiveTabInfo({ tabId: activeInfo.tabId, windowId: activeInfo.windowId, url: tab.url });
+    };
+    chrome.tabs.onActivated.addListener(handleTabChange);
+
+    // Monitor window focus change
+    const handleWindowFocus = async (windowId: number) => {
+      if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+
+      const [tab] = await chrome.tabs.query({ active: true, windowId });
+      if (!tab?.url) return;
+
+      setactiveTabInfo({ tabId: tab.id!, windowId, url: tab.url });
+    };
+    chrome.windows.onFocusChanged.addListener(handleWindowFocus);
 
     return () => {
-      manager.disconnect();
+      chrome.tabs.onActivated.removeListener(handleTabChange);
+      chrome.windows.onFocusChanged.removeListener(handleWindowFocus);
+      connectionManager?.disconnect();
     };
   }, []);
 
   const handleMessage = (message: BaseMessage) => {
-    switch (message.type) {
-      case 'TAB_ACTIVATED':
-        setActiveTab(message.payload as TabInfo);
-        break;
-    }
+    logger.debug('Message received', { type: message.type });
+    // Implement other message handling here ...
   };
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="bg-white rounded-lg shadow p-4">
         <h1 className="text-xl font-bold mb-4">Side Panel</h1>
-        {activeTab ? (
+        {activeTabInfo ? (
           <div>
-            <p>Active Tab ID: {activeTab.tabId}</p>
-            <p>Window ID: {activeTab.windowId}</p>
-            <p>URL: {activeTab.url}</p>
+            <p>Active Tab ID: {activeTabInfo.tabId}</p>
+            <p>Window ID: {activeTabInfo.windowId}</p>
+            <p>URL: {activeTabInfo.url}</p>
           </div>
         ) : (
           <p>No active tab</p>
