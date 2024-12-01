@@ -11,6 +11,7 @@ export interface TabInfo {
 export interface MessagePayloads {
   GET_TAB_ID: undefined;
   GET_TAB_ID_RESPONSE: { tabId: number };
+  SIDEPANEL_CLOSED: undefined;
   // Add new message types here
 }
 

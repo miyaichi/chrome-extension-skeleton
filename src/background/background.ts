@@ -33,27 +33,92 @@ class BackgroundService {
   private setupChromeListeners() {
     // Monitor tab activation
     chrome.tabs.onActivated.addListener(async (activeInfo) => {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      if (!tab.url) return;
+      try {
+        const tab = await chrome.tabs.get(activeInfo.tabId);
+        if (!tab?.url) {
+          this.logger.debug('No URL found for activated tab');
+          return;
+        }
 
-      this.activeTabInfo = { tabId: activeInfo.tabId, windowId: activeInfo.windowId, url: tab.url };
+        this.activeTabInfo = {
+          tabId: activeInfo.tabId,
+          windowId: activeInfo.windowId,
+          url: tab.url,
+        };
+        this.logger.debug('Tab activated', this.activeTabInfo);
+      } catch (error) {
+        this.logger.error('Failed to handle tab activation:', error);
+      }
     });
 
     // Monitor tab URL change
     chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-      if (changeInfo.status === 'complete') {
-        this.activeTabInfo = { tabId, windowId: tab.windowId, url: tab.url || '' };
+      try {
+        if (changeInfo.status === 'complete') {
+          if (!tab.windowId) {
+            this.logger.warn('No window ID found for updated tab');
+            return;
+          }
+
+          this.activeTabInfo = {
+            tabId,
+            windowId: tab.windowId,
+            url: tab.url || '',
+          };
+          this.logger.debug('Tab updated', this.activeTabInfo);
+        }
+      } catch (error) {
+        this.logger.error('Failed to handle tab update:', error);
       }
     });
 
     // Monitor window focus
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
-      if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+      try {
+        if (windowId === chrome.windows.WINDOW_ID_NONE) return;
 
-      const [tab] = await chrome.tabs.query({ active: true, windowId });
-      if (!tab?.url) return;
+        const [tab] = await chrome.tabs.query({ active: true, windowId });
+        if (!tab?.url) {
+          this.logger.debug('No active tab or URL found');
+          return;
+        }
+        if (!tab.id) {
+          this.logger.warn('Tab found but no tab ID available');
+          return;
+        }
 
-      this.activeTabInfo = { tabId: tab.id!, windowId, url: tab.url };
+        this.activeTabInfo = { tabId: tab.id, windowId, url: tab.url };
+        this.logger.debug('Active tab updated', this.activeTabInfo);
+      } catch (error) {
+        this.logger.error('Failed to handle window focus change:', error);
+      }
+    });
+
+    // Monitor sidepanel close
+    chrome.runtime.onConnect.addListener((port) => {
+      if (port.name === 'sidepanel') {
+        port.onDisconnect.addListener(async () => {
+          try {
+            this.logger.debug('Side panel disconnected');
+            const tabs = await chrome.tabs.query({});
+            for (const tab of tabs) {
+              if (tab.id) {
+                try {
+                  // Directly use chrome.tabs.sendMessage instead of ConnectionManager
+                  await chrome.tabs.sendMessage(tab.id, {
+                    type: 'SIDEPANEL_CLOSED',
+                    payload: undefined,
+                  });
+                } catch (error) {
+                  this.logger.debug(`Failed to send message to tab ${tab.id}:`, error);
+                }
+              }
+            }
+          } catch (error) {
+            this.logger.error('Failed to notify content scripts:', error);
+          }
+        });
+      }
     });
 
     // Get sender tab ID for content scripts
