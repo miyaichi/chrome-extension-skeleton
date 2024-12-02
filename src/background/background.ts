@@ -7,6 +7,7 @@ class BackgroundService {
   private connectionManager: ConnectionManager;
   private logger: Logger;
   private activeTabInfo: TabInfo | null = null;
+  private contentScriptContext: Context = 'undefined';
   private readonly ports = new Map<string, chrome.runtime.Port>();
 
   constructor() {
@@ -36,17 +37,7 @@ class BackgroundService {
     chrome.tabs.onActivated.addListener(async (activeInfo) => {
       try {
         const tab = await chrome.tabs.get(activeInfo.tabId);
-        if (!tab?.url) {
-          this.logger.debug('No URL found for activated tab');
-          return;
-        }
-
-        this.activeTabInfo = {
-          tabId: activeInfo.tabId,
-          windowId: activeInfo.windowId,
-          url: tab.url,
-        };
-        this.logger.debug('Tab activated', this.activeTabInfo);
+        this.activeTabChanged(activeInfo.windowId, activeInfo.tabId, tab.url || '');
       } catch (error) {
         this.logger.error('Failed to handle tab activation:', error);
       }
@@ -56,17 +47,9 @@ class BackgroundService {
     chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       try {
         if (changeInfo.status === 'complete') {
-          if (!tab.windowId) {
-            this.logger.warn('No window ID found for updated tab');
-            return;
-          }
+          if (!tab.windowId) return;
 
-          this.activeTabInfo = {
-            tabId,
-            windowId: tab.windowId,
-            url: tab.url || '',
-          };
-          this.logger.debug('Tab updated', this.activeTabInfo);
+          this.activeTabChanged(tab.windowId, tabId, tab.url || '');
         }
       } catch (error) {
         this.logger.error('Failed to handle tab update:', error);
@@ -79,17 +62,7 @@ class BackgroundService {
         if (windowId === chrome.windows.WINDOW_ID_NONE) return;
 
         const [tab] = await chrome.tabs.query({ active: true, windowId });
-        if (!tab?.url) {
-          this.logger.debug('No active tab or URL found');
-          return;
-        }
-        if (!tab.id) {
-          this.logger.warn('Tab found but no tab ID available');
-          return;
-        }
-
-        this.activeTabInfo = { tabId: tab.id, windowId, url: tab.url };
-        this.logger.debug('Active tab updated', this.activeTabInfo);
+        this.activeTabChanged(windowId, tab.id || -1, tab.url || '');
       } catch (error) {
         this.logger.error('Failed to handle window focus change:', error);
       }
@@ -144,6 +117,12 @@ class BackgroundService {
       }
     });
   }
+
+  private activeTabChanged = (windowId: number, tabId: number, url: string) => {
+    this.activeTabInfo = { tabId, windowId, url };
+    this.contentScriptContext = tabId ? `content-${tabId}` : 'undefined';
+    this.logger.debug('Active tab changed', this.contentScriptContext);
+  };
 
   private handleMessage: MessageHandler = (message) => {
     // Implement other message handling here ..
