@@ -1,4 +1,4 @@
-import { MessageHandler, TabInfo } from '../types/messages';
+import { ExtensionMessage, MessageHandler, TabInfo } from '../types/messages';
 import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
@@ -7,6 +7,7 @@ class BackgroundService {
   private connectionManager: ConnectionManager;
   private logger: Logger;
   private activeTabInfo: TabInfo | null = null;
+  private readonly ports = new Map<string, chrome.runtime.Port>();
 
   constructor() {
     this.logger = new Logger('background');
@@ -94,8 +95,11 @@ class BackgroundService {
       }
     });
 
-    // Monitor sidepanel close
+    // Monitor connections and message forwarding
     chrome.runtime.onConnect.addListener((port) => {
+      this.ports.set(port.name, port);
+
+      // Handle sidepanel disconnection
       if (port.name === 'sidepanel') {
         port.onDisconnect.addListener(async () => {
           try {
@@ -119,6 +123,18 @@ class BackgroundService {
           }
         });
       }
+
+      // Forward messages
+      port.onMessage.addListener((message: ExtensionMessage) => {
+        this.logger.debug('Forwarding message:', message);
+        const targetPort = this.ports.get(message.target);
+        targetPort?.postMessage(message);
+      });
+
+      port.onDisconnect.addListener(() => {
+        this.ports.delete(port.name);
+        this.logger.debug('Port disconnected:', port.name);
+      });
     });
 
     // Get sender tab ID for content scripts
