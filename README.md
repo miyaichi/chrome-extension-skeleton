@@ -7,6 +7,8 @@ A Chrome Extension skeleton project with TypeScript, React, and TailwindCSS, fea
 - **Type-safe messaging system** between background, content scripts, and side panel
 - **React-based side panel** with TailwindCSS styling
 - **Robust connection management** between extension components
+- **Safe tab management** with proper handling of restricted URLs
+- **State sharing** through Chrome Storage API
 - **TypeScript** for enhanced development experience
 - **Webpack** for building and bundling
 - **Hot reload** support during development
@@ -17,18 +19,32 @@ The extension consists of three main components:
 
 1. **Background Service Worker**
    - Monitors tab and window changes
-   - Handles tab ID requests from content scripts
-   - Notifies side panel of active tab changes
+   - Manages active tab information and script injection permissions
+   - Stores tab information in Chrome Storage
+   - Handles restricted URL patterns
+   - Controls content script injection
 
 2. **Content Script**
-   - Retrieves its own tab ID on initialization
-   - Establishes persistent connection with proper tab ID
-   - Communicates with background and side panel
+   - Retrieves tab information from Chrome Storage
+   - Establishes persistent connection based on tab ID
+   - Monitors tab information changes
+   - Handles cleanup on side panel disconnection
+   - Prevents duplicate initialization
 
 3. **Side Panel**
    - React-based user interface
-   - Manages active tab information
-   - Handles extension-wide communication
+   - Manages active tab communication
+   - Displays tab information
+   - Handles extension-wide messaging
+
+## State Management
+
+The extension implements a robust state management system:
+
+- **Chrome Storage API** for sharing state between components
+- **Active tab information** management with proper URL restrictions
+- **Script injection control** for restricted URLs
+- **Type-safe state interfaces**
 
 ## Getting Started
 
@@ -72,7 +88,6 @@ npm run watch
 
 ```
 ├── public/
-│   ├── manifest.json
 │   ├── sidepanel.html
 │   └── icons/
 ├── src/
@@ -93,6 +108,7 @@ npm run watch
 │   └── utils/
 │       ├── connectionManager.ts
 │       └── logger.ts
+├── manifest.json
 ├── package.json
 ├── webpack.config.js
 ├── tsconfig.json
@@ -106,6 +122,24 @@ npm run watch
 - [React](https://reactjs.org/) - UI library
 - [TailwindCSS](https://tailwindcss.com/) - CSS framework
 - [Webpack](https://webpack.js.org/) - Module bundler
+
+## Technical Considerations
+
+### URL Restrictions
+The extension properly handles restricted URL patterns:
+- chrome:// URLs
+- chrome-extension:// URLs
+- Other restricted protocols
+
+### Content Script Injection
+- Automatic injection for allowed URLs
+- Safe handling of restricted URLs
+- Duplicate injection prevention
+
+### State Synchronization
+- Chrome Storage for reliable state sharing
+- Change detection and proper state updates
+- Type-safe state management
 
 ## Connection Management
 
