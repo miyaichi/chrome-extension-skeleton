@@ -49,15 +49,15 @@ class ContentScript {
     }
 
     try {
-      this.logger.debug('Setting up permanent connection', { tabId });
+      this.logger.debug('Setting up connection', { tabId });
       this.connectionManager = new ConnectionManager(
         `content-${tabId}`,
         this.handleMessage
       );
       this.connectionManager.connect();
-      this.logger.debug('Permanent connection established', { tabId });
+      this.logger.debug('Connection established', { tabId });
     } catch (error) {
-      this.logger.error('Failed to setup permanent connection:', error);
+      this.logger.error('Failed to setup connection:', error);
     }
   }
 
