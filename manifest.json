@@ -3,13 +3,14 @@
   "name": "Chrome Extension Skeleton",
   "version": "1.0",
   "description": "Chrome Extension with Background, Content Script, and Side Panel",
-  "permissions": ["tabs", "sidePanel"],
+  "permissions": ["tabs", "sidePanel", "storage", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["contentScript.js"]
     }
   ],

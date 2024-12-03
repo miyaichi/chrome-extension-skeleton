@@ -6,15 +6,49 @@ class ContentScript {
   private connectionManager: ConnectionManager | null = null;
   private logger: Logger;
 
-  constructor(sender: chrome.runtime.MessageSender) {
+  constructor() {
     this.logger = new Logger('content-script');
-    this.setupPermanentConnection(sender.tab?.id || 0);
+    this.initialize();
   }
 
-  private async setupPermanentConnection(tabId: number) {
+  private async initialize() {
     try {
-      if (this.connectionManager) return;
+      // Listen for PING messages
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message.type === 'PING') return true;
+      });
 
+      // Get activeTabInfo from storage
+      const { activeTabInfo } = await chrome.storage.local.get('activeTabInfo');
+
+      if (activeTabInfo?.isScriptInjectionAllowed) {
+        this.setupPermanentConnection(activeTabInfo.tabId);
+      } else {
+        this.logger.debug('Script injection not allowed for this tab');
+      }
+
+      // Listen for storage changes
+      chrome.storage.local.onChanged.addListener((changes) => {
+        const oldTabId = changes.activeTabInfo?.oldValue?.tabId;
+        const newTabId = changes.activeTabInfo?.newValue?.tabId;
+        const isAllowed = changes.activeTabInfo?.newValue?.isScriptInjectionAllowed;
+
+        if (newTabId && newTabId !== oldTabId && isAllowed) {
+          this.setupPermanentConnection(newTabId);
+        }
+      });
+    } catch (error) {
+      this.logger.error('Failed to initialize content script:', error);
+    }
+  }
+
+  private setupPermanentConnection(tabId: number) {
+    if (this.connectionManager) {
+      this.logger.debug('Connection already established');
+      return;
+    }
+
+    try {
       this.logger.debug('Setting up permanent connection', { tabId });
       this.connectionManager = new ConnectionManager(
         `content-${tabId}`,
@@ -45,34 +79,8 @@ class ContentScript {
   }
 }
 
-// ContentScript initialization
-const contentScriptInstances = new WeakMap<Window, ContentScript>();
-
-// Ensure content script is initialized immediately
-if (!contentScriptInstances.has(window)) {
-  const logger = new Logger('content-script');
-
-  try {
-    logger.log('Initializing content script...');
-    // Get the tab ID from the background
-    chrome.runtime.sendMessage({ type: 'GET_TAB_ID' }, (response) => {
-      if (chrome.runtime.lastError) {
-        logger.error('Failed to get tab ID:', chrome.runtime.lastError);
-        return;
-      }
-
-      if (!response?.tabId) {
-        logger.error('No tab ID received in response');
-        return;
-      }
-
-      const sender = {
-        tab: { id: response.tabId },
-      } as chrome.runtime.MessageSender;
-
-      contentScriptInstances.set(window, new ContentScript(sender));
-    });
-  } catch (error) {
-    logger.error('Failed to initialize content script:', error);
-  }
+// Initialize content script
+if (!window.contentScriptInitialized) {
+  window.contentScriptInitialized = true;
+  new ContentScript();
 }

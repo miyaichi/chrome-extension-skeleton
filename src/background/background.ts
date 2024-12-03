@@ -1,20 +1,34 @@
 import { ExtensionMessage, MessageHandler, TabInfo } from '../types/messages';
-import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
+
+interface ActiveTabInfo extends TabInfo {
+  isScriptInjectionAllowed: boolean;
+}
 
 class BackgroundService {
   private connectionManager: ConnectionManager;
   private logger: Logger;
-  private activeTabInfo: TabInfo | null = null;
-  private contentScriptContext: Context = 'undefined';
+  private activeTabInfo: ActiveTabInfo | null = null;
   private readonly ports = new Map<string, chrome.runtime.Port>();
+  private readonly RESTRICTED_PATTERNS = [
+    'chrome://',
+    'chrome-extension://',
+    'devtools://',
+    'edge://',
+    'about:',
+  ];
 
   constructor() {
     this.logger = new Logger('background');
     this.connectionManager = new ConnectionManager('background', this.handleMessage);
     this.setupConnection();
     this.setupChromeListeners();
+  }
+
+  private isScriptInjectionAllowed(url: string): boolean {
+    if (!url) return false;
+    return !this.RESTRICTED_PATTERNS.some((pattern) => url.startsWith(pattern));
   }
 
   private async setupConnection() {
@@ -27,7 +41,7 @@ class BackgroundService {
           this.connectionManager.connect();
         }
       }, 5000);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Failed to setup connection:', error);
     }
   }
@@ -37,7 +51,7 @@ class BackgroundService {
     chrome.tabs.onActivated.addListener(async (activeInfo) => {
       try {
         const tab = await chrome.tabs.get(activeInfo.tabId);
-        this.activeTabChanged(activeInfo.windowId, activeInfo.tabId, tab.url || '');
+        await this.handleTabActivation(tab);
       } catch (error) {
         this.logger.error('Failed to handle tab activation:', error);
       }
@@ -46,10 +60,8 @@ class BackgroundService {
     // Monitor tab URL change
     chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       try {
-        if (changeInfo.status === 'complete') {
-          if (!tab.windowId) return;
-
-          this.activeTabChanged(tab.windowId, tabId, tab.url || '');
+        if (changeInfo.status === 'complete' && tab.active) {
+          await this.handleTabActivation(tab);
         }
       } catch (error) {
         this.logger.error('Failed to handle tab update:', error);
@@ -62,42 +74,22 @@ class BackgroundService {
         if (windowId === chrome.windows.WINDOW_ID_NONE) return;
 
         const [tab] = await chrome.tabs.query({ active: true, windowId });
-        this.activeTabChanged(windowId, tab.id || -1, tab.url || '');
+        if (tab) {
+          await this.handleTabActivation(tab);
+        }
       } catch (error) {
         this.logger.error('Failed to handle window focus change:', error);
       }
     });
 
-    // Monitor connections and message forwarding
+    // Monitor connections
     chrome.runtime.onConnect.addListener((port) => {
       this.ports.set(port.name, port);
 
-      // Handle sidepanel disconnection
       if (port.name === 'sidepanel') {
-        port.onDisconnect.addListener(async () => {
-          try {
-            this.logger.debug('Side panel disconnected');
-            const tabs = await chrome.tabs.query({});
-            for (const tab of tabs) {
-              if (tab.id) {
-                try {
-                  // Directly use chrome.tabs.sendMessage instead of ConnectionManager
-                  await chrome.tabs.sendMessage(tab.id, {
-                    type: 'SIDEPANEL_CLOSED',
-                    payload: undefined,
-                  });
-                } catch (error) {
-                  this.logger.debug(`Failed to send message to tab ${tab.id}:`, error);
-                }
-              }
-            }
-          } catch (error) {
-            this.logger.error('Failed to notify content scripts:', error);
-          }
-        });
+        port.onDisconnect.addListener(this.handleSidePanelDisconnection);
       }
 
-      // Forward messages
       port.onMessage.addListener((message: ExtensionMessage) => {
         this.logger.debug('Forwarding message:', message);
         const targetPort = this.ports.get(message.target);
@@ -109,40 +101,59 @@ class BackgroundService {
         this.logger.debug('Port disconnected:', port.name);
       });
     });
-
-    // Get sender tab ID for content scripts
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.type === 'GET_TAB_ID' && sender.tab?.id) {
-        sendResponse({ tabId: sender.tab.id });
-      }
-    });
   }
 
-  private activeTabChanged = (windowId: number, tabId: number, url: string) => {
-    this.activeTabInfo = { tabId, windowId, url };
-    this.contentScriptContext = tabId ? `content-${tabId}` : 'undefined';
-    this.logger.debug('Active tab changed', this.contentScriptContext);
-  };
-
-  private handleMessage: MessageHandler = (message) => {
-    // Implement other message handling here ..
-    this.logger.debug('Message received', { type: message.type });
-    switch (message.type) {
-      case 'GET_TAB_ID':
-        this.handleGetTabId(message.source);
-        break;
+  private handleSidePanelDisconnection = async () => {
+    this.logger.debug('Side panel disconnected');
+    try {
+      if (this.activeTabInfo?.tabId && this.activeTabInfo.isScriptInjectionAllowed) {
+        await chrome.tabs.sendMessage(this.activeTabInfo.tabId, {
+          type: 'SIDEPANEL_CLOSED',
+          payload: undefined,
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to notify content script:', error);
     }
   };
 
-  private async handleGetTabId(source: Context) {
-    if (!source.startsWith('content-')) return;
+  private async handleTabActivation(tab: chrome.tabs.Tab) {
+    if (!tab.id || !tab.url) return;
 
-    const tabId = parseInt(source.split('-')[1]);
-    await this.connectionManager.sendMessage(source, {
-      type: 'GET_TAB_ID_RESPONSE',
-      payload: { tabId },
-    });
+    const isAllowed = this.isScriptInjectionAllowed(tab.url);
+    this.activeTabInfo = {
+      tabId: tab.id,
+      windowId: tab.windowId,
+      url: tab.url,
+      isScriptInjectionAllowed: isAllowed,
+    };
+
+    // Store the active tab info
+    await chrome.storage.local.set({ activeTabInfo: this.activeTabInfo });
+
+    if (!isAllowed) {
+      this.logger.debug('Script injection not allowed for this URL:', tab.url);
+      return;
+    }
+
+    try {
+      // Check if content script is already injected
+      await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
+    } catch (error: any) {
+      // Inject only if allowed and not already injected
+      if (error.toString().includes('Could not establish connection')) {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['contentScript.js'],
+        });
+      }
+    }
   }
+
+  private handleMessage: MessageHandler = (message) => {
+    this.logger.debug('Message received', { type: message.type });
+    // Implement message handling if needed
+  };
 }
 
 // Initialize the background service

@@ -1,13 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { BaseMessage, TabInfo } from '../types/messages';
+import { BaseMessage } from '../types/messages';
+import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('sidepanel');
 
+// Only for display purpose
+interface DisplayInfo {
+  url: string;
+  windowId: number;
+}
+
 export default function App() {
-  const [activeTabInfo, setactiveTabInfo] = useState<TabInfo | null>(null);
+  const [tabId, setTabId] = useState<number | null>(null);
+  const [displayInfo, setDisplayInfo] = useState<DisplayInfo | null>(null);
   const [connectionManager, setConnectionManager] = useState<ConnectionManager | null>(null);
+  const [contentScriptContext, setContentScriptContext] = useState<Context>('undefined');
   const initialized = React.useRef(false);
 
   useEffect(() => {
@@ -17,9 +26,7 @@ export default function App() {
     }
 
     const initializeTab = async () => {
-      if (initialized.current) {
-        return;
-      }
+      if (initialized.current) return;
 
       try {
         const manager = new ConnectionManager('sidepanel', handleMessage);
@@ -29,11 +36,15 @@ export default function App() {
         // Initialize active tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-          setactiveTabInfo({ tabId: tab.id, windowId: tab.windowId, url: tab.url || '' });
+          setTabId(tab.id);
+          setDisplayInfo({
+            windowId: tab.windowId,
+            url: tab.url || '',
+          });
           initialized.current = true;
         }
 
-        logger.debug('Initalized', { tab });
+        logger.debug('Initialized', { tab });
       } catch (error) {
         logger.error('Tab initialization failed:', error);
       }
@@ -46,7 +57,11 @@ export default function App() {
       const tab = await chrome.tabs.get(activeInfo.tabId);
       if (!tab.url) return;
 
-      setactiveTabInfo({ tabId: activeInfo.tabId, windowId: activeInfo.windowId, url: tab.url });
+      setTabId(activeInfo.tabId);
+      setDisplayInfo({
+        windowId: activeInfo.windowId,
+        url: tab.url,
+      });
     };
     chrome.tabs.onActivated.addListener(handleTabChange);
 
@@ -59,7 +74,11 @@ export default function App() {
       if (changeInfo.status === 'complete') {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (activeTab.id === tabId) {
-          setactiveTabInfo({ tabId, windowId: tab.windowId, url: tab.url || '' });
+          setTabId(tabId);
+          setDisplayInfo({
+            windowId: tab.windowId,
+            url: tab.url || '',
+          });
         }
       }
     };
@@ -72,7 +91,11 @@ export default function App() {
       const [tab] = await chrome.tabs.query({ active: true, windowId });
       if (!tab?.url) return;
 
-      setactiveTabInfo({ tabId: tab.id!, windowId, url: tab.url });
+      setTabId(tab.id!);
+      setDisplayInfo({
+        windowId,
+        url: tab.url,
+      });
     };
     chrome.windows.onFocusChanged.addListener(handleWindowFocus);
 
@@ -84,6 +107,11 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    // Update content script context
+    setContentScriptContext(tabId ? `content-${tabId}` : 'undefined');
+  }, [tabId, displayInfo]);
+
   const handleMessage = (message: BaseMessage) => {
     logger.debug('Message received', { type: message.type });
     // Implement other message handling here ...
@@ -93,11 +121,11 @@ export default function App() {
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="bg-white rounded-lg shadow p-4">
         <h1 className="text-xl font-bold mb-4">Side Panel</h1>
-        {activeTabInfo ? (
+        {tabId && displayInfo ? (
           <div>
-            <p>Active Tab ID: {activeTabInfo.tabId}</p>
-            <p>Window ID: {activeTabInfo.windowId}</p>
-            <p>URL: {activeTabInfo.url}</p>
+            <p>Active Tab ID: {tabId}</p>
+            <p>Window ID: {displayInfo.windowId}</p>
+            <p>URL: {displayInfo.url}</p>
           </div>
         ) : (
           <p>No active tab</p>

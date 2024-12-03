@@ -5,6 +5,7 @@ export interface TabInfo {
   tabId: number;
   windowId: number;
   url: string;
+  isScriptInjectionAllowed: boolean;
 }
 
 // Message payloads type
