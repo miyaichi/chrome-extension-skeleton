@@ -52,7 +52,7 @@ class ContentScript {
       this.logger.debug('Setting up permanent connection', { tabId });
       this.connectionManager = new ConnectionManager(
         `content-${tabId}`,
-        this.handlePermanentMessages
+        this.handleMessage
       );
       this.connectionManager.connect();
       this.logger.debug('Permanent connection established', { tabId });
@@ -61,7 +61,7 @@ class ContentScript {
     }
   }
 
-  private handlePermanentMessages: MessageHandler = (message) => {
+  private handleMessage: MessageHandler = (message) => {
     this.logger.debug('Message received', { type: message.type });
 
     switch (message.type) {
