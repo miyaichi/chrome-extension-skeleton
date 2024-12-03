@@ -1,15 +1,13 @@
 import { ExtensionMessage, MessageHandler, TabInfo } from '../types/messages';
+import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
-
-interface ActiveTabInfo extends TabInfo {
-  isScriptInjectionAllowed: boolean;
-}
 
 class BackgroundService {
   private connectionManager: ConnectionManager;
   private logger: Logger;
-  private activeTabInfo: ActiveTabInfo | null = null;
+  private activeTabInfo: TabInfo | null = null;
+  private contentScriptContext: Context = 'undefined';
   private readonly ports = new Map<string, chrome.runtime.Port>();
   private readonly RESTRICTED_PATTERNS = [
     'chrome://',
@@ -24,6 +22,7 @@ class BackgroundService {
     this.connectionManager = new ConnectionManager('background', this.handleMessage);
     this.setupConnection();
     this.setupChromeListeners();
+    this.setupSidepanel();
   }
 
   private isScriptInjectionAllowed(url: string): boolean {
@@ -90,6 +89,7 @@ class BackgroundService {
         port.onDisconnect.addListener(this.handleSidePanelDisconnection);
       }
 
+      // Forward messages between content script and side panel
       port.onMessage.addListener((message: ExtensionMessage) => {
         this.logger.debug('Forwarding message:', message);
         const targetPort = this.ports.get(message.target);
@@ -133,6 +133,7 @@ class BackgroundService {
 
     if (!isAllowed) {
       this.logger.debug('Script injection not allowed for this URL:', tab.url);
+      this.contentScriptContext = 'undefined';
       return;
     }
 
@@ -147,6 +148,18 @@ class BackgroundService {
           files: ['contentScript.js'],
         });
       }
+    }
+
+    // Set the context for the content script in the active tab
+    this.contentScriptContext = `content-${tab.id}`;
+  }
+
+  private async setupSidepanel(): Promise<void> {
+    try {
+      // Open the side panel on action clicks
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    } catch (error) {
+      this.logger.error('Failed to set panel behavior:', error);
     }
   }
 

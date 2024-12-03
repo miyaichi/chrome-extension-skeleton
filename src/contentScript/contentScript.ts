@@ -22,7 +22,7 @@ class ContentScript {
       const { activeTabInfo } = await chrome.storage.local.get('activeTabInfo');
 
       if (activeTabInfo?.isScriptInjectionAllowed) {
-        this.setupPermanentConnection(activeTabInfo.tabId);
+        this.setupConnection(activeTabInfo.tabId);
       } else {
         this.logger.debug('Script injection not allowed for this tab');
       }
@@ -34,7 +34,7 @@ class ContentScript {
         const isAllowed = changes.activeTabInfo?.newValue?.isScriptInjectionAllowed;
 
         if (newTabId && newTabId !== oldTabId && isAllowed) {
-          this.setupPermanentConnection(newTabId);
+          this.setupConnection(newTabId);
         }
       });
     } catch (error) {
@@ -42,7 +42,7 @@ class ContentScript {
     }
   }
 
-  private setupPermanentConnection(tabId: number) {
+  private setupConnection(tabId: number) {
     if (this.connectionManager) {
       this.logger.debug('Connection already established');
       return;
