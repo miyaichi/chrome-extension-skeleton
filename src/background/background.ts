@@ -189,7 +189,7 @@ class BackgroundService {
     this.logger.debug('Message sent', { target, type: message.type });
   }
 
-  private handleMessage = (port: chrome.runtime.Port, message: BaseMessage) => {
+  private handleMessage = (port: chrome.runtime.Port, message: ExtensionMessage) => {
     this.logger.debug('Message received', { type: message.type });
     // Implement message handling if needed
     //
