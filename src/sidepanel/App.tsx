@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BaseMessage } from '../types/messages';
+import { BaseMessage, MessagePayloads } from '../types/messages';
 import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
@@ -114,7 +114,17 @@ export default function App() {
 
   const handleMessage = (message: BaseMessage) => {
     logger.debug('Message received', { type: message.type });
+
     // Implement other message handling here ...
+    switch (message.type) {
+      case 'TEST_MESSAGE_FOR_SIDEPANEL':
+        const payload = message.payload as MessagePayloads['TEST_MESSAGE_FOR_SIDEPANEL'];
+        logger.debug('Received message:', payload.message);
+        break;
+      default:
+        logger.debug('Unknown message type:', message.type);
+        break;
+    }
   };
 
   return (
