@@ -71,7 +71,7 @@ class ContentScript {
       case 'TEST_MESSAGE_FOR_CONTENTSCRIPT':
         const payload = message.payload as MessagePayloads['TEST_MESSAGE_FOR_CONTENTSCRIPT'];
         this.logger.debug('Received message:', payload.message);
-        break
+        break;
       default:
         this.logger.debug('Unknown message type:', message.type);
         break;
