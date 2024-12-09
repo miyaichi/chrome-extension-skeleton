@@ -6,6 +6,11 @@ import { Logger } from '../utils/logger';
 
 const logger = new Logger('sidepanel');
 
+interface BFCacheRestore {
+  timestamp: number;
+  tabId: number;
+}
+
 // Only for display purpose
 interface DisplayInfo {
   url: string;
@@ -52,59 +57,33 @@ export default function App() {
 
     initializeTab();
 
-    // Monitor active tab change
-    const handleTabChange = async (activeInfo: chrome.tabs.TabActiveInfo) => {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      if (!tab.url) return;
-
-      setTabId(activeInfo.tabId);
-      setDisplayInfo({
-        windowId: activeInfo.windowId,
-        url: tab.url,
-      });
-    };
-    chrome.tabs.onActivated.addListener(handleTabChange);
-
-    // Monitor tab URL change
-    const handleTabUpdated = async (
-      tabId: number,
-      changeInfo: chrome.tabs.TabChangeInfo,
-      tab: chrome.tabs.Tab
-    ) => {
-      if (changeInfo.status === 'complete') {
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (activeTab.id === tabId) {
-          setTabId(tabId);
-          setDisplayInfo({
-            windowId: tab.windowId,
-            url: tab.url || '',
-          });
-        }
+    // Monitor storage changes
+    chrome.storage.local.onChanged.addListener((changes) => {
+      // Handle BFCache restore
+      if (changes.bfCacheRestore?.newValue as BFCacheRestore) {
+        logger.info('Content script restored from BFCache');
+        setTabId(changes.bfCacheRestore.newValue.tabId);
+        setDisplayInfo({
+          windowId: changes.bfCacheRestore.newValue.windowId,
+          url: changes.bfCacheRestore.newValue.url,
+        });
       }
-    };
-    chrome.tabs.onUpdated.addListener(handleTabUpdated);
 
-    // Monitor window focus change
-    const handleWindowFocus = async (windowId: number) => {
-      if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-
-      const [tab] = await chrome.tabs.query({ active: true, windowId });
-      if (!tab?.url) return;
-
-      setTabId(tab.id!);
-      setDisplayInfo({
-        windowId,
-        url: tab.url,
-      });
-    };
-    chrome.windows.onFocusChanged.addListener(handleWindowFocus);
-
-    return () => {
-      chrome.tabs.onActivated.removeListener(handleTabChange);
-      chrome.tabs.onUpdated.removeListener(handleTabUpdated);
-      chrome.windows.onFocusChanged.removeListener(handleWindowFocus);
-      connectionManager?.disconnect();
-    };
+      // Handle tab changess
+      const { oldValue, newValue } = changes.activeTabInfo || {};
+      if (
+        newValue?.tabId !== oldValue?.tabId ||
+        newValue?.url !== oldValue?.url ||
+        newValue?.isScriptInjectionAllowed !== oldValue?.isScriptInjectionAllowed
+      ) {
+        logger.debug('Tab activation change detected from storage:', { oldValue, newValue });
+        setTabId(newValue?.tabId ?? null);
+        setDisplayInfo({
+          windowId: newValue?.windowId ?? -1,
+          url: newValue?.url ?? '',
+        });
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -133,8 +112,8 @@ export default function App() {
         <h1 className="text-xl font-bold mb-4">Side Panel</h1>
         {tabId && displayInfo ? (
           <div>
-            <p>Active Tab ID: {tabId}</p>
             <p>Window ID: {displayInfo.windowId}</p>
+            <p>Active Tab ID: {tabId}</p>
             <p>URL: {displayInfo.url}</p>
           </div>
         ) : (

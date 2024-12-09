@@ -14,11 +14,28 @@ class ContentScript {
   private async initialize() {
     try {
       // Listen for PING and SIDEPANEL_CLOSED messages
-      chrome.runtime.onMessage.addListener((message) => {
-        if (message.type === 'PING') return true;
+      chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === 'PING') {
+          sendResponse({ status: 'alive' });
+          return false;
+        }
         if (message.type === 'SIDEPANEL_CLOSED') {
+          this.logger.info('Sidepanel closed, performing cleanup');
           this.performCleanup();
-          return true;
+          sendResponse({ status: 'cleaned' });
+          return false;
+        }
+      });
+
+      // Listen for page show events
+      window.addEventListener('pageshow', async (event) => {
+        const e = event as PageTransitionEvent;
+        if (e.persisted) {
+          this.logger.info('Page restored from BFCache');
+
+          // Reset connection and cleanup
+          this.connectionManager = null;
+          this.performCleanup();
         }
       });
 
@@ -54,7 +71,6 @@ class ContentScript {
     }
 
     try {
-      this.logger.debug('Setting up connection', { tabId });
       this.connectionManager = new ConnectionManager(`content-${tabId}`, this.handleMessage);
       this.connectionManager.connect();
       this.logger.debug('Connection established', { tabId });
@@ -78,9 +94,9 @@ class ContentScript {
     }
   };
 
-  // Cleanup on sidepanel close
+  // Cleanup existing state
   private performCleanup() {
-    this.logger.info('Sidepanel closed, performing cleanup');
+    this.logger.info('Performing cleanup');
     // Implement cleanup logic here ...
   }
 }
