@@ -120,13 +120,18 @@ class BackgroundService {
           return;
         }
 
-        // Forward messages between content script and side panel
-        this.logger.debug('Forwarding message:', message);
         const targetPort = this.ports.get(message.target);
-        targetPort?.postMessage(message);
+        if (targetPort) {
+          // Forward messages between content script and side panel
+          this.logger.debug('Forwarding message:', message);
+          targetPort?.postMessage(message);
+        }
       });
 
-      port.onDisconnect.addListener(this.handleBFCacheError);
+      port.onDisconnect.addListener(() => {
+        this.ports.delete(port.name);
+        this.logger.debug('Port disconnected:', port.name);
+      });
     });
   }
 
@@ -134,10 +139,7 @@ class BackgroundService {
     this.logger.debug('Side panel disconnected');
     try {
       if (this.activeTabInfo?.tabId && this.activeTabInfo.isScriptInjectionAllowed) {
-        await chrome.tabs.sendMessage(this.activeTabInfo.tabId, {
-          type: 'SIDEPANEL_CLOSED',
-          payload: undefined,
-        });
+        await chrome.tabs.sendMessage(this.activeTabInfo.tabId, { type: 'SIDEPANEL_CLOSED', payload: undefined});
       }
     } catch (error) {
       this.logger.error('Failed to notify content script:', error);
@@ -170,27 +172,6 @@ class BackgroundService {
       this.contentScriptContext = `content-${tab.id}`;
     }
   }
-
-  private handleBFCacheError = async (port: chrome.runtime.Port) => {
-    const error = chrome.runtime.lastError;
-    if (error?.message?.includes('back/forward cache')) {
-      this.logger.info('Port disconnected due to BFCache:', port.name);
-
-      // Cleanup the port
-      this.ports.delete(port.name);
-
-      if (port.name.startsWith('content-')) {
-        const tabId = parseInt(port.name.split('-')[1]);
-        if (tabId) {
-          const tab = await chrome.tabs.get(tabId);
-          if (tab.url) {
-            this.logger.info('Reinjecting content script for tab:', tab.url);
-            await this.injectContentScriptIfNeeded(tabId, tab.url);
-          }
-        }
-      }
-    }
-  };
 
   private async setupSidepanel(): Promise<void> {
     try {
