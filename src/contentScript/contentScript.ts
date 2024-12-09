@@ -102,7 +102,4 @@ class ContentScript {
 }
 
 // Initialize content script
-if (!window.contentScriptInitialized) {
-  window.contentScriptInitialized = true;
-  new ContentScript();
-}
+new ContentScript();
