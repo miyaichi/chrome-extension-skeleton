@@ -1,15 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { BaseMessage, MessagePayloads } from '../types/messages';
+import { BaseMessage, MessagePayloads, TabInfo } from '../types/messages';
 import { Context } from '../types/types';
 import { ConnectionManager } from '../utils/connectionManager';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('sidepanel');
-
-interface BFCacheRestore {
-  timestamp: number;
-  tabId: number;
-}
 
 // Only for display purpose
 interface DisplayInfo {
@@ -59,30 +54,16 @@ export default function App() {
 
     // Monitor storage changes
     chrome.storage.local.onChanged.addListener((changes) => {
-      // Handle BFCache restore
-      if (changes.bfCacheRestore?.newValue as BFCacheRestore) {
-        logger.info('Content script restored from BFCache');
-        setTabId(changes.bfCacheRestore.newValue.tabId);
-        setDisplayInfo({
-          windowId: changes.bfCacheRestore.newValue.windowId,
-          url: changes.bfCacheRestore.newValue.url,
-        });
-      }
+      const { activeTabInfo } = changes;
+      const newTab = activeTabInfo?.newValue as TabInfo | undefined;
+      if (!newTab) return;
 
-      // Handle tab changess
-      const { oldValue, newValue } = changes.activeTabInfo || {};
-      if (
-        newValue?.tabId !== oldValue?.tabId ||
-        newValue?.url !== oldValue?.url ||
-        newValue?.isScriptInjectionAllowed !== oldValue?.isScriptInjectionAllowed
-      ) {
-        logger.debug('Tab activation change detected from storage:', { oldValue, newValue });
-        setTabId(newValue?.tabId ?? null);
-        setDisplayInfo({
-          windowId: newValue?.windowId ?? -1,
-          url: newValue?.url ?? '',
-        });
-      }
+      logger.debug('Tab info change detected from storage:', newTab);
+      setTabId(newTab.tabId);
+      setDisplayInfo({
+        windowId: newTab?.windowId ?? -1,
+        url: newTab?.url ?? '',
+      });
     });
   }, []);
 
